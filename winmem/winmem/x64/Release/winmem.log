@@ -1,0 +1,23 @@
+﻿  Building 'WinMem' with toolset 'WindowsKernelModeDriver10.0' and the 'Universal' target platform.
+  Stamping x64\Release\winmem.inf
+  Stamping [Version] section with DriverVer=07/30/2023,21.40.10.915
+  winmem.cpp
+  winmem.vcxproj -> C:\Users\kenichirou\source\repos\winmem\x64\Release\WinMem.sys
+  Done Adding Additional Store
+  Successfully signed: C:\Users\kenichirou\source\repos\winmem\x64\Release\WinMem.sys
+  
+  Driver is 'Universal'.
+  ........................
+  Signability test complete.
+  
+  Errors:
+  None
+  
+  Warnings:
+  None
+  
+  Catalog generation complete.
+  C:\Users\kenichirou\source\repos\winmem\x64\Release\WinMem\winmem.cat
+  Done Adding Additional Store
+  Successfully signed: C:\Users\kenichirou\source\repos\winmem\x64\Release\WinMem\winmem.cat
+  

@@ -1,0 +1,8 @@
+﻿  Building 'winmem' with toolset 'WindowsKernelModeDriver10.0' and the 'Universal' target platform.
+  Stamping Release\winmem.inf
+  Stamping [Version] section with DriverVer=07/30/2023,6.58.45.77
+  winmem.cpp
+WdfDriverEntry.lib(stub.obj) : error LNK2019: 未解決の外部シンボル _DriverEntry@8 が関数 _FxDriverEntryWorker@8 で参照されました
+    定義済みの一致する可能性があるシンボルに関するヒント:
+      "long __stdcall DriverEntry(struct _DRIVER_OBJECT *,struct _UNICODE_STRING *)" (?DriverEntry@@YGJPAU_DRIVER_OBJECT@@PAU_UNICODE_STRING@@@Z)
+C:\Users\kenichirou\source\repos\winmem\Release\winmem.sys : fatal error LNK1120: 1 件の未解決の外部参照

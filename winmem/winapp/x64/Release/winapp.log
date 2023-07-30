@@ -1,0 +1,9 @@
+﻿  inst.cpp
+  interface.cpp
+C:\Users\kenichirou\source\repos\winmem\winapp\interface.cpp(119,28): warning C4312: '型キャスト': 'DWORD' からより大きいサイズの 'PVOID' へ変換します。
+  winapp.cpp
+  コード生成しています。
+  Previous IPDB not found, fall back to full compilation.
+  All 25 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  コード生成が終了しました。
+  winapp.vcxproj -> C:\Users\kenichirou\source\repos\winmem\x64\Release\WinApp.exe
