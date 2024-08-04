@@ -1,4 +1,4 @@
-#include <ntddk.h>
+﻿#include <ntddk.h>
 #include "winmem.h"
 
 //Mapped memory information list
@@ -48,7 +48,7 @@ const int MAX_OBJECT_SIZE = 256;
 UCHAR gucCounter;
 WINMEM_PCIINFO info[MAX_OBJECT_SIZE];     // nvme or secondary bus
 
-
+KSPIN_LOCK singlelist_spinLock;
 
 /*++
 DriverEntry routine
@@ -80,13 +80,15 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING Registry
 
 	RtlInitUnicodeString(&DeviceNameU, DeviceName);
 
+	KeInitializeSpinLock(&singlelist_spinLock);
+
 	//Create an EXCLUSIVE device object
 	ntStatus = IoCreateDevice(DriverObject,		//IN: Driver Object
 		0,					//IN: Device Extension Size
 		&DeviceNameU,		//IN: Device Name
 		FILE_DEVICE_WINMEM,	//IN: Device Type
 		0,					//IN: Device Characteristics
-		TRUE,				//IN: Exclusive
+		FALSE,				//IN: Exclusive
 		&fdo);				//OUT:Created Device Object
 
 	if (NT_SUCCESS(ntStatus))
@@ -158,7 +160,6 @@ NTSTATUS WinMemClose(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 	return STATUS_SUCCESS;
 }
-
 /*++
 IRP_MJ_DEVICE_CONTROL dispatch routine
 --*/
@@ -185,7 +186,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 
 	UNREFERENCED_PARAMETER(fdo);
-	DbgPrint("Entering WinMemIoCtl\n");
+	//DbgPrint("Entering WinMemIoCtl\n");
 
 	//Init to default settings
 	irp->IoStatus.Status = STATUS_SUCCESS;
@@ -215,9 +216,10 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			{
 				PHYSICAL_ADDRESS phyAddr;
 				PVOID pvk, pvu;
-
+			
 				phyAddr.QuadPart = (ULONGLONG)pMem->pvAddr;
 
+			
 				//get mapped kernel address
 				pvk = MmMapIoSpace(phyAddr, pMem->dwSize, MmNonCached);
 
@@ -231,19 +233,21 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 						//build mdl and map to user space
 						MmBuildMdlForNonPagedPool(pMdl);
-						pvu = MmMapLockedPages(pMdl, UserMode);
+					
+						//pvu = MmMapLockedPages(pMdl, UserMode);
+						pvu = MmMapLockedPagesSpecifyCache(pMdl, UserMode, MmNonCached, NULL, FALSE, NormalPagePriority);
 
 						//insert mapped infomation to list
-						pMapInfo = (PMAPINFO)ExAllocatePool(\
-							NonPagedPool, sizeof(MAPINFO));
+						pMapInfo = (PMAPINFO)ExAllocatePool(NonPagedPool, sizeof(MAPINFO));
 						pMapInfo->pMdl = pMdl;
 						pMapInfo->pvk = pvk;
 						pMapInfo->pvu = pvu;
 						pMapInfo->memSize = pMem->dwSize;
-						PushEntryList(&lstMapInfo, &pMapInfo->link);
 
-						DbgPrint("Map physical 0x%x to virtual 0x%x, size %u\n", \
-							pMem->pvAddr, pvu, pMem->dwSize);
+						//PushEntryList(&lstMapInfo, &pMapInfo->link);
+						ExInterlockedPushEntryList(&lstMapInfo, &pMapInfo->link, &singlelist_spinLock);
+
+						//DbgPrint("Map kernel virtual addr: 0x%p , user virtual addr: 0x%p, size %u\n", pvk, pvu, pMem->dwSize);
 
 						RtlCopyMemory(pSysBuf, &pvu, sizeof(PVOID));
 
@@ -259,6 +263,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 				}
 				else
 					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+			
 			}
 			else
 				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
@@ -267,15 +272,19 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 		case IOCTL_WINMEM_UNMAP:
 
-			DbgPrint("IOCTL_WINMEM_UNMAP\n");
+			//DbgPrint("IOCTL_WINMEM_UNMAP\n");
 
 			if (dwInBufLen == sizeof(WINMEM_MEM))
 			{
 				PMAPINFO pMapInfo;
 				PSINGLE_LIST_ENTRY pLink, pPrevLink;
+				KIRQL oldIrql;
+				
+				KeAcquireSpinLock(&singlelist_spinLock, &oldIrql);
 
 				//initialize to head
 				pPrevLink = pLink = lstMapInfo.Next;
+
 				while (pLink)
 				{
 					pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, link);
@@ -289,7 +298,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 							IoFreeMdl(pMapInfo->pMdl);
 							MmUnmapIoSpace(pMapInfo->pvk, pMapInfo->memSize);
 
-							DbgPrint("Unmap virtual address 0x%x, size %u\n", pMapInfo->pvu, pMapInfo->memSize);
+							//DbgPrint("Unmap user virtual address 0x%p, size %u\n", pMapInfo->pvu, pMapInfo->memSize);
 
 							//delete matched element from the list
 							if (pLink == lstMapInfo.Next)
@@ -308,6 +317,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					pPrevLink = pLink;
 					pLink = pLink->Next;
 				}
+
+				KeReleaseSpinLock(&singlelist_spinLock, oldIrql);
+
 			}
 			else
 				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
@@ -371,7 +383,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 #if 1
 		case IOCTL_WINMEM_GETPCI:
 			DbgPrint("IOCTL_WINMEM_GETPCI\n");
-			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)){
+			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)) {
 				for (int i = 0; i < gucCounter; ++i) {
 					if (info[i].s.dwBusNum == pPci->dwBusNum && info[i].s.dwDevNum == pPci->dwDevNum && info[i].s.dwFuncNum == pPci->dwFuncNum) {
 						PVOID pValue;
@@ -471,6 +483,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					info[gucCounter].s.dwFuncNum = pPci->dwFuncNum;
 					info[gucCounter].obj = pdo;
 
+
 #if 0
 					PCI_COMMON_CONFIG pci_config;
 					auto status = ReadWriteConfigSpace(info[guCounter].obj, 0, &pci_config, 0, sizeof(PCI_COMMON_CONFIG));
@@ -508,7 +521,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 	IoCompleteRequest(irp, IO_NO_INCREMENT);
 
-	DbgPrint("Leaving WINMEMIoCtl\n");
+	//DbgPrint("Leaving WINMEMIoCtl\n");
 
 	return ntStatus;
 }
@@ -526,11 +539,26 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 
 	DbgPrint("Entering WinMemUnload\n");
 
+#if 0
+	pLink = lstMapInfo.Next;
+	
+	for (int i = 0; i < 100, pLink != nullptr ; ++i) {
+		pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, link);
+		DbgPrint("WinMemUnload: kernel addr: 0x%p,  virtual addr: 0x%p, size %u\n", pMapInfo->pvk, pMapInfo->pvu, pMapInfo->memSize);
+		pLink = pLink->Next;
+	}
+#endif
+
+#if 1
 	//free resources
 	pLink = PopEntryList(&lstMapInfo);
+	//pLink = ExInterlockedPopEntryList(&lstMapInfo, &spinLock);
+
 	while (pLink)
 	{
 		pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, link);
+
+		//DbgPrint("Map physical 0x%p to virtual 0x%p, size %u\n", pMapInfo->pvk, pMapInfo->pvu , pMapInfo->memSize );
 
 		MmUnmapLockedPages(pMapInfo->pvu, pMapInfo->pMdl);
 		IoFreeMdl(pMapInfo->pMdl);
@@ -539,7 +567,10 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 		ExFreePool(pMapInfo);
 
 		pLink = PopEntryList(&lstMapInfo);
+		//pLink = ExInterlockedPopEntryList(&lstMapInfo, &spinLock);
 	}
+#endif
+
 #if 0
 	if (busInterface && busInterface->InterfaceDereference)
 	{
@@ -548,6 +579,7 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 		ExFreePool(busInterface);
 	}
 #endif
+
 	RtlInitUnicodeString(&DeviceLinkU, DeviceSymLink);
 
 	ntStatus = IoDeleteSymbolicLink(&DeviceLinkU);
