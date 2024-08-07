@@ -5,6 +5,13 @@
 BOOL LoadWinMemDriver();
 VOID UnloadWinMemDriver();
 
+
+BOOL StartWinMemDriver();
+VOID StopWinMemDriver();
+
+BOOL OpenWinMemHandle();
+VOID CloseWinMemHandle();
+
 // Memomory mapped IO
 PVOID MapWinMem(DWORD phyAddr, DWORD memSize);
 VOID UnmapWinMem(PVOID pVirAddr, DWORD memSize);

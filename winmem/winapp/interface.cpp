@@ -108,6 +108,83 @@ VOID UnloadWinMemDriver()
 	}
 }
 
+
+BOOL StartWinMemDriver() {
+	CHAR szDriverPath[MAX_PATH] = { 0 };
+	BOOL bResult;
+	GetDriverPath(szDriverPath);
+	strcat(szDriverPath, "winmem.sys");
+	std::cout << szDriverPath << std::endl;
+	bResult = InstallDriver(szDriverPath, "WINMEM");
+
+	if (!bResult) {
+		std::cout << "fail to install winmem" << std::endl;
+		return FALSE;
+	}
+
+	bResult = StartDriver("WINMEM");
+
+	if (!bResult)
+		return FALSE;
+
+	return TRUE;
+}
+
+//stop and remove driver
+VOID StopWinMemDriver()
+{
+
+	if (RemoveDriver("WINMEM")) {
+		std::cerr << "uninstall winmem driver" << std::endl;
+	}
+}
+
+
+BOOL OpenWinMemHandle() {
+
+	CHAR szDeviceSymLink[MAX_PATH] = { 0 };
+	size_t iReturnValue;
+	errno_t ret = wcstombs_s(&iReturnValue,
+		szDeviceSymLink,
+		sizeof(szDeviceSymLink),
+		DeviceSymLink,
+		_TRUNCATE
+	);
+
+	std::cout << szDeviceSymLink << std::endl;
+
+	if (ret != 0) {
+		std::cerr << "wcstombs_s error!! ret=%d\n" << ret << std::endl;
+		return FALSE;
+	}
+	std::cout << szDeviceSymLink << std::endl;
+	hDriver = CreateFile(szDeviceSymLink,
+		GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		nullptr,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		nullptr);
+
+	if (hDriver == INVALID_HANDLE_VALUE) {
+		std::cerr << GetLastError() << std::endl;
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+
+VOID CloseWinMemHandle() {
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(hDriver);
+		hDriver = INVALID_HANDLE_VALUE;
+	}
+
+
+}
+
 //map physical memory to user space
 PVOID MapWinMem(DWORD phyAddr, DWORD memSize)
 {
