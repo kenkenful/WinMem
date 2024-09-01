@@ -29,6 +29,16 @@ extern "C" NTSYSAPI NTSTATUS NTAPI ObReferenceObjectByName(
 	_Inout_opt_ PVOID ParseContext,
 	_Out_ PVOID * Object);
 
+
+
+extern "C" NTSTATUS
+IoEnumerateDeviceObjectList(
+	IN PDRIVER_OBJECT  DriverObject,
+	IN PDEVICE_OBJECT * DeviceObjectList,
+	IN ULONG  DeviceObjectListSize,
+	OUT PULONG  ActualNumberDeviceObjects
+);
+
 extern "C" POBJECT_TYPE * IoDriverObjectType;
 
 NTSTATUS ReadWriteConfigSpace(
@@ -445,13 +455,92 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 		case IOCTL_WINMEM_GETOBJ:
 			RtlInitUnicodeString(&name, DriverName);
 			PDRIVER_OBJECT driver;
+			ULONG actualCount ;
+			PDEVICE_OBJECT *m_ppDevices;
+
 			ntStatus = ObReferenceObjectByName(&name, OBJ_CASE_INSENSITIVE | OBJ_OPENIF, nullptr, 0,
 				*IoDriverObjectType, KernelMode, nullptr, (PVOID*)&driver);
 
-			if (!NT_SUCCESS(ntStatus)) break;
-			DbgPrint("Success   ObReferenceObjectByName\n");
+			if (!NT_SUCCESS(ntStatus)) {
+				DbgPrint("Failure  ObReferenceObjectByName\n");
+				break;
+			}
+			else {
+				DbgPrint("Success   ObReferenceObjectByName\n");
+			}
 
+#if 1
+			ntStatus = IoEnumerateDeviceObjectList(driver, NULL, 0, &actualCount);
+
+			 DbgPrint("Success IoEnumerateDeviceObjectList :%d \n", actualCount);
+
+
+			//m_ppDevices = new PDEVICE_OBJECT[actualCount];
+			m_ppDevices = (PDEVICE_OBJECT*)ExAllocatePool(NonPagedPool, sizeof(PDEVICE_OBJECT) * actualCount);
+
+
+			ntStatus = IoEnumerateDeviceObjectList(driver, m_ppDevices, actualCount * sizeof(PDEVICE_OBJECT), &actualCount);
+			if (NT_SUCCESS(ntStatus)) {
+				DbgPrint("Success IoEnumerateDeviceObjectList \n");
+				for (size_t i = 0; i < actualCount; i++) {
+					//pdo = IoGetAttachedDeviceReference(m_ppDevices[i]);
+					
+					ntStatus = IoGetDeviceProperty(m_ppDevices[i],
+						DevicePropertyBusNumber,
+						sizeof(ULONG),
+						(PVOID)&BusNumber,
+						&length);
+					if (NT_SUCCESS(ntStatus)) {
+						DbgPrint("BusNumber:%x\n", BusNumber);
+
+						ntStatus = IoGetDeviceProperty(m_ppDevices[i],
+							DevicePropertyAddress,
+							sizeof(ULONG),
+							(PVOID)&propertyAddress,
+							&length);
+						
+						if (NT_SUCCESS(ntStatus)) {
+							FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
+							DeviceNumber = (USHORT)(((propertyAddress) >> 16) & 0x0000FFFF);
+							DbgPrint("DeviceNumber:%x\n", DeviceNumber);
+							DbgPrint("FunctionNumber:%x\n", FunctionNumber);
+
+							if (BusNumber == pPci->dwBusNum && DeviceNumber == pPci->dwDevNum && FunctionNumber == pPci->dwFuncNum) {
+								PCI_COMMON_CONFIG pci_config;
+								auto status = ReadWriteConfigSpace(m_ppDevices[i], 0, &pci_config, 0, sizeof(PCI_COMMON_CONFIG));
+								if (NT_SUCCESS(status))
+								{
+									DbgPrint("======================PCI_COMMON_CONFIG Begin=====================\n");
+									DbgPrint("VendorID:%x\n", pci_config.VendorID);
+									DbgPrint("DeviceID:%x\n", pci_config.DeviceID);
+									DbgPrint("CapabilitiesPtr: %x\n", pci_config.u.type0.CapabilitiesPtr);
+								}
+								break;
+							}
+							
+						}else
+							DbgPrint("Failure IoGetDeviceProperty\n");
+
+					}
+					else
+						DbgPrint("Failure IoGetDeviceProperty\n");
+
+				}
+			}
+
+			for (size_t i = 0; i < actualCount; i++)
+				ObDereferenceObject(m_ppDevices[i]);
+
+			ExFreePool(m_ppDevices);
+
+			ObDereferenceObject(driver);
+
+#endif
+
+
+#if 0
 			pdo = driver->DeviceObject;
+
 
 			while (pdo)
 			{
@@ -483,10 +572,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					info[gucCounter].s.dwFuncNum = pPci->dwFuncNum;
 					info[gucCounter].obj = pdo;
 
-
-#if 0
 					PCI_COMMON_CONFIG pci_config;
-					auto status = ReadWriteConfigSpace(info[guCounter].obj, 0, &pci_config, 0, sizeof(PCI_COMMON_CONFIG));
+					auto status = ReadWriteConfigSpace(info[gucCounter].obj, 0, &pci_config, 0, sizeof(PCI_COMMON_CONFIG));
 					if (NT_SUCCESS(status))
 					{
 						DbgPrint("======================PCI_COMMON_CONFIG Begin=====================\n");
@@ -497,13 +584,13 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					else {
 						DbgPrint("Failure ReadWriteconfig\n");
 					}
-#endif
+
 					gucCounter++;
 					break;
 				}
 				pdo = pdo->NextDevice;
 			}
-
+#endif 
 			ObDereferenceObject(driver);
 
 			break;
