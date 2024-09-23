@@ -220,6 +220,101 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 		switch (dwIoCtlCode)
 		{
+		case IOCTL_WINMEM_READ_MEM:
+			if (dwInBufLen == sizeof(WINMEM_MEM) && ((pMem->dwRegOff + pMem->dwBytes) <= pMem->dwSize) && (dwOutBufLen >= pMem->dwBytes)) {
+				PHYSICAL_ADDRESS phyAddr;
+				PVOID pvk;
+
+				phyAddr.QuadPart = (ULONGLONG)pMem->pvAddr;
+
+				//get mapped kernel address
+				pvk = MmMapIoSpace(phyAddr, pMem->dwSize, MmNonCached);
+
+				if (pvk)
+				{
+					PVOID pValue;
+					pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+
+					if (pValue != nullptr) {
+						switch (pMem->dwBytes) {
+						case 1:
+							*(UINT8*)pValue = *(UINT8*)((UINT8*)pvk + pMem->dwRegOff);
+							break;
+						case 2:
+							*(UINT16*)pValue = *(UINT16*)((UINT8*)pvk + pMem->dwRegOff);
+							break;
+						case 4:
+							*(UINT32*)pValue = *(UINT32*)((UINT8*)pvk + pMem->dwRegOff);
+							break;
+
+						case 8:
+							*(UINT64*)pValue = *(UINT64*)((UINT8*)pvk + pMem->dwRegOff);
+							break;
+
+						default:
+							break;
+						}
+					}
+
+					irp->IoStatus.Information = pMem->dwBytes;
+					DbgPrint("pMem->dwBytes : %x\n", pMem->dwBytes);
+
+					MmUnmapIoSpace(pvk, pMem->dwSize);
+				}
+
+			}
+			else {
+				DbgPrint("invalid parameter\n");
+				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+			}
+			break;
+
+		case IOCTL_WINMEM_WRITE_MEM:
+			if (dwInBufLen == sizeof(WINMEM_MEM) && ((pMem->dwRegOff + pMem->dwBytes) <= pMem->dwSize) && (dwOutBufLen >= pMem->dwBytes)) {
+				PHYSICAL_ADDRESS phyAddr;
+				PVOID pvk;
+
+				phyAddr.QuadPart = (ULONGLONG)pMem->pvAddr;
+
+				//get mapped kernel address
+				pvk = MmMapIoSpace(phyAddr, pMem->dwSize, MmNonCached);
+
+				if (pvk)
+				{
+					PVOID pValue;
+					pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+					if (pValue != nullptr) {
+						switch (pMem->dwBytes) {
+						case 1:
+							*(UINT8*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT8*)pValue;
+							break;
+						case 2:
+							*(UINT16*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT16*)pValue;
+							break;
+						case 4:
+							*(UINT32*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT32*)pValue;
+							break;
+
+						case 8:
+							*(UINT64*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT64*)pValue;
+							break;
+
+						default:
+							break;
+
+						}
+					}
+					irp->IoStatus.Information = pMem->dwBytes;
+					MmUnmapIoSpace(pvk, pMem->dwSize);
+				}
+
+			}
+			else {
+				DbgPrint("invalid parameter\n");
+				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+			}
+			break;
+
 		case IOCTL_WINMEM_MAP:
 
 			if (dwInBufLen == sizeof(WINMEM_MEM) && dwOutBufLen == sizeof(PVOID))
@@ -247,21 +342,31 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 						//pvu = MmMapLockedPages(pMdl, UserMode);
 						pvu = MmMapLockedPagesSpecifyCache(pMdl, UserMode, MmNonCached, NULL, FALSE, NormalPagePriority);
 
-						//insert mapped infomation to list
-						pMapInfo = (PMAPINFO)ExAllocatePool(NonPagedPool, sizeof(MAPINFO));
-						pMapInfo->pMdl = pMdl;
-						pMapInfo->pvk = pvk;
-						pMapInfo->pvu = pvu;
-						pMapInfo->memSize = pMem->dwSize;
+						if (pvu) {
+							//insert mapped infomation to list
+							pMapInfo = (PMAPINFO)ExAllocatePool(NonPagedPool, sizeof(MAPINFO));
+							pMapInfo->pMdl = pMdl;
+							pMapInfo->pvk = pvk;
+							pMapInfo->pvu = pvu;
+							pMapInfo->memSize = pMem->dwSize;
 
-						//PushEntryList(&lstMapInfo, &pMapInfo->link);
-						ExInterlockedPushEntryList(&lstMapInfo, &pMapInfo->link, &singlelist_spinLock);
+							//PushEntryList(&lstMapInfo, &pMapInfo->link);
+							ExInterlockedPushEntryList(&lstMapInfo, &pMapInfo->link, &singlelist_spinLock);
 
-						//DbgPrint("Map kernel virtual addr: 0x%p , user virtual addr: 0x%p, size %u\n", pvk, pvu, pMem->dwSize);
+							//DbgPrint("Map kernel virtual addr: 0x%p , user virtual addr: 0x%p, size %u\n", pvk, pvu, pMem->dwSize);
 
-						RtlCopyMemory(pSysBuf, &pvu, sizeof(PVOID));
+							RtlCopyMemory(pSysBuf, &pvu, sizeof(PVOID));
 
-						irp->IoStatus.Information = sizeof(PVOID);
+							irp->IoStatus.Information = sizeof(PVOID);
+						
+						}
+						else {
+							IoFreeMdl(pMdl);
+							MmUnmapIoSpace(pvk, pMem->dwSize);
+							irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+						
+						}
+		
 					}
 					else
 					{
