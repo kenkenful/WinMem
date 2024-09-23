@@ -186,7 +186,7 @@ VOID CloseWinMemHandle() {
 }
 
 //map physical memory to user space
-PVOID MapWinMem(DWORD phyAddr, DWORD memSize)
+PVOID MapWinMem(DWORD phyAddr, DWORD mapSize)
 {
 	PVOID pVirAddr = nullptr;	//mapped virtual addr
 	WINMEM_MEM pm;
@@ -194,7 +194,7 @@ PVOID MapWinMem(DWORD phyAddr, DWORD memSize)
 	BOOL bRet = FALSE;
 
 	pm.pvAddr = (PVOID)phyAddr;	//physical address
-	pm.dwSize = memSize;	//memory size
+	pm.dwSize = mapSize;	//memory size
 
 	if (hDriver != INVALID_HANDLE_VALUE)
 	{
@@ -209,13 +209,13 @@ PVOID MapWinMem(DWORD phyAddr, DWORD memSize)
 }
 
 //unmap memory
-VOID UnmapWinMem(PVOID pVirAddr, DWORD memSize)
+VOID UnmapWinMem(PVOID pVirAddr, DWORD mapSize)
 {
 	WINMEM_MEM pm;
 	DWORD dwBytes = 0;
 
 	pm.pvAddr = pVirAddr;	//virtual address
-	pm.dwSize = memSize;	//memory size
+	pm.dwSize = mapSize;	//memory size
 
 	if (hDriver != INVALID_HANDLE_VALUE)
 	{
@@ -405,3 +405,53 @@ BOOL WritePCI(DWORD busNum, DWORD devNum, DWORD funcNum,
 	else
 		return FALSE;
 }
+
+
+BOOL ReadMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue)
+{
+	BOOL bRet = FALSE;
+	DWORD dwBytes;
+	WINMEM_MEM pm;
+
+	pm.pvAddr = (PVOID)phyAddr;
+	pm.dwSize = mapSize;
+	pm.dwRegOff = regOff;
+	pm.dwBytes = bytes;
+
+
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		bRet = DeviceIoControl(hDriver, IOCTL_WINMEM_READ_MEM, &pm,
+			sizeof(WINMEM_MEM), pValue, bytes, &dwBytes, nullptr);
+	}
+
+	if (bRet && dwBytes == bytes)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+BOOL WriteMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue)
+{
+	BOOL bRet = FALSE;
+	DWORD dwBytes;
+	WINMEM_MEM pm;
+
+	pm.pvAddr = (PVOID)phyAddr;
+	pm.dwSize = mapSize;
+	pm.dwRegOff = regOff;
+	pm.dwBytes = bytes;
+
+
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		bRet = DeviceIoControl(hDriver, IOCTL_WINMEM_WRITE_MEM, &pm,
+			sizeof(WINMEM_MEM), pValue, bytes, &dwBytes, nullptr);
+	}
+
+	if (bRet && dwBytes == bytes)
+		return TRUE;
+	else
+		return FALSE;
+}
+

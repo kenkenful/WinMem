@@ -13,8 +13,8 @@ BOOL OpenWinMemHandle();
 VOID CloseWinMemHandle();
 
 // Memomory mapped IO
-PVOID MapWinMem(DWORD phyAddr, DWORD memSize);
-VOID UnmapWinMem(PVOID pVirAddr, DWORD memSize);
+PVOID MapWinMem(DWORD phyAddr, DWORD mapSize);
+VOID UnmapWinMem(PVOID pVirAddr, DWORD mapSize);
 
 // 
 
@@ -29,7 +29,9 @@ VOID WritePortLong(WORD portAddr, DWORD portValue);
 // via PCI bus driver
 VOID GetDeviceObj(DWORD busNum, DWORD devNum, DWORD funcNum);
 
-BOOL ReadPCI(DWORD busNum, DWORD devNum, DWORD funcNum,
-	DWORD regOff, DWORD bytes, PVOID pValue);
-BOOL WritePCI(DWORD busNum, DWORD devNum, DWORD funcNum,
-	DWORD regOff, DWORD bytes, PVOID pValue);
+BOOL ReadPCI(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
+BOOL WritePCI(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
+
+
+BOOL ReadMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue);
+BOOL WriteMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue);
