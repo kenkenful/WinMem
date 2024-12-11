@@ -1,17 +1,20 @@
 ﻿#include <ntddk.h>
 #include "winmem.h"
+#include "FastMutex.h"
 
 //Mapped memory information list
 typedef struct tagMAPINFO
 {
-	SINGLE_LIST_ENTRY	link;
+	//SINGLE_LIST_ENTRY	link;
+	LIST_ENTRY	ListEntry;
 	PMDL				pMdl;	//allocated mdl
 	PVOID				pvk;	//kernel mode virtual address
 	PVOID				pvu;	//user mode virtual address
 	ULONG				memSize;//memory size in bytes
 } MAPINFO, * PMAPINFO;
 
-SINGLE_LIST_ENTRY lstMapInfo;	//mapped memory information
+//SINGLE_LIST_ENTRY lstMapInfo;	//mapped memory information
+LIST_ENTRY linkListHead;
 
 //forward function declaration
 NTSTATUS WinMemCreate(IN PDEVICE_OBJECT fdo, IN PIRP irp);
@@ -58,7 +61,7 @@ const int MAX_OBJECT_SIZE = 256;
 UCHAR gucCounter;
 WINMEM_PCIINFO info[MAX_OBJECT_SIZE];     // nvme or secondary bus
 
-KSPIN_LOCK singlelist_spinLock;
+FastMutex locker;
 
 /*++
 DriverEntry routine
@@ -75,22 +78,12 @@ NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING Registry
 
 	DbgPrint("Entering DriverEntry\n");
 
-	lstMapInfo.Next = NULL;
+	//lstMapInfo.Next = NULL;
+	InitializeListHead(&linkListHead);
 
-#if 0
-	//initialize pci bus interface buffer
-	busInterface = (PPCI_BUS_INTERFACE_STANDARD)ExAllocatePool(NonPagedPool,
-		sizeof(PCI_BUS_INTERFACE_STANDARD));
-	if (busInterface == NULL)
-	{
-		return STATUS_INSUFFICIENT_RESOURCES;
-	}
-	RtlZeroMemory(busInterface, sizeof(PCI_BUS_INTERFACE_STANDARD));
-#endif
+	locker.Init();
 
 	RtlInitUnicodeString(&DeviceNameU, DeviceName);
-
-	KeInitializeSpinLock(&singlelist_spinLock);
 
 	//Create an EXCLUSIVE device object
 	ntStatus = IoCreateDevice(DriverObject,		//IN: Driver Object
@@ -324,7 +317,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			
 				phyAddr.QuadPart = (ULONGLONG)pMem->pvAddr;
 
-			
 				//get mapped kernel address
 				pvk = MmMapIoSpace(phyAddr, pMem->dwSize, MmNonCached);
 
@@ -350,29 +342,23 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 							pMapInfo->pvu = pvu;
 							pMapInfo->memSize = pMem->dwSize;
 
-							//PushEntryList(&lstMapInfo, &pMapInfo->link);
-							ExInterlockedPushEntryList(&lstMapInfo, &pMapInfo->link, &singlelist_spinLock);
-
-							//DbgPrint("Map kernel virtual addr: 0x%p , user virtual addr: 0x%p, size %u\n", pvk, pvu, pMem->dwSize);
+							locker.Lock();
+							InsertHeadList(&linkListHead, &pMapInfo->ListEntry);
+							locker.UnLock();
 
 							RtlCopyMemory(pSysBuf, &pvu, sizeof(PVOID));
-
 							irp->IoStatus.Information = sizeof(PVOID);
-						
 						}
 						else {
 							IoFreeMdl(pMdl);
 							MmUnmapIoSpace(pvk, pMem->dwSize);
 							irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
-						
 						}
-		
 					}
 					else
 					{
 						//allocate mdl error, unmap the mapped physical memory
 						MmUnmapIoSpace(pvk, pMem->dwSize);
-
 						irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
 					}
 				}
@@ -392,17 +378,14 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			if (dwInBufLen == sizeof(WINMEM_MEM))
 			{
 				PMAPINFO pMapInfo;
-				PSINGLE_LIST_ENTRY pLink, pPrevLink;
-				KIRQL oldIrql;
+				PLIST_ENTRY pLink;
 				
-				KeAcquireSpinLock(&singlelist_spinLock, &oldIrql);
-
 				//initialize to head
-				pPrevLink = pLink = lstMapInfo.Next;
+				pLink = linkListHead.Flink;
 
 				while (pLink)
 				{
-					pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, link);
+					pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, ListEntry);
 
 					if (pMapInfo->pvu == pMem->pvAddr)
 					{
@@ -413,13 +396,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 							IoFreeMdl(pMapInfo->pMdl);
 							MmUnmapIoSpace(pMapInfo->pvk, pMapInfo->memSize);
 
-							//DbgPrint("Unmap user virtual address 0x%p, size %u\n", pMapInfo->pvu, pMapInfo->memSize);
-
-							//delete matched element from the list
-							if (pLink == lstMapInfo.Next)
-								lstMapInfo.Next = pLink->Next;	//delete head elememt
-							else
-								pPrevLink->Next = pLink->Next;
+							locker.Lock();
+							RemoveEntryList(&pMapInfo->ListEntry);
+							locker.UnLock();
 
 							ExFreePool(pMapInfo);
 						}
@@ -428,13 +407,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 						break;
 					}
-
-					pPrevLink = pLink;
-					pLink = pLink->Next;
+					pLink = pLink->Flink;
 				}
-
-				KeReleaseSpinLock(&singlelist_spinLock, oldIrql);
-
 			}
 			else
 				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
@@ -579,10 +553,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 			 DbgPrint("Success IoEnumerateDeviceObjectList :%d \n", actualCount);
 
-
 			//m_ppDevices = new PDEVICE_OBJECT[actualCount];
 			m_ppDevices = (PDEVICE_OBJECT*)ExAllocatePool(NonPagedPool, sizeof(PDEVICE_OBJECT) * actualCount);
-
 
 			ntStatus = IoEnumerateDeviceObjectList(driver, m_ppDevices, actualCount * sizeof(PDEVICE_OBJECT), &actualCount);
 			if (NT_SUCCESS(ntStatus)) {
@@ -727,28 +699,13 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 	UNICODE_STRING DeviceLinkU;
 	NTSTATUS ntStatus;
 	PMAPINFO pMapInfo;
-	PSINGLE_LIST_ENTRY pLink;
 
 	DbgPrint("Entering WinMemUnload\n");
 
-#if 0
-	pLink = lstMapInfo.Next;
-	
-	for (int i = 0; i < 100, pLink != nullptr ; ++i) {
-		pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, link);
-		DbgPrint("WinMemUnload: kernel addr: 0x%p,  virtual addr: 0x%p, size %u\n", pMapInfo->pvk, pMapInfo->pvu, pMapInfo->memSize);
-		pLink = pLink->Next;
-	}
-#endif
-
-#if 1
-	//free resources
-	pLink = PopEntryList(&lstMapInfo);
-	//pLink = ExInterlockedPopEntryList(&lstMapInfo, &spinLock);
-
-	while (pLink)
+	while (!IsListEmpty(&linkListHead))
 	{
-		pMapInfo = CONTAINING_RECORD(pLink, MAPINFO, link);
+		PLIST_ENTRY pEntry = RemoveTailList(&linkListHead);
+		pMapInfo = CONTAINING_RECORD(pEntry, MAPINFO, ListEntry);
 
 		//DbgPrint("Map physical 0x%p to virtual 0x%p, size %u\n", pMapInfo->pvk, pMapInfo->pvu , pMapInfo->memSize );
 
@@ -758,19 +715,7 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 
 		ExFreePool(pMapInfo);
 
-		pLink = PopEntryList(&lstMapInfo);
-		//pLink = ExInterlockedPopEntryList(&lstMapInfo, &spinLock);
 	}
-#endif
-
-#if 0
-	if (busInterface && busInterface->InterfaceDereference)
-	{
-		(*busInterface->InterfaceDereference)(busInterface->Context);
-
-		ExFreePool(busInterface);
-	}
-#endif
 
 	RtlInitUnicodeString(&DeviceLinkU, DeviceSymLink);
 
