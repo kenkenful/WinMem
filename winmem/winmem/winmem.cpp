@@ -668,7 +668,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 				pdo = pdo->NextDevice;
 			}
 #endif 
-			ObDereferenceObject(driver);
+			//ObDereferenceObject(driver);
 
 			break;
 
