@@ -114,7 +114,7 @@ int Error(DWORD code = GetLastError()) {
 
 int wmain(int argc, const wchar_t* argv[]) {
 
-	DWORD busNum = 0x06;
+	DWORD busNum = 0x07;
 	DWORD devNum = 0x00;
 	DWORD funcNum = 0x00;
 
@@ -124,6 +124,15 @@ int wmain(int argc, const wchar_t* argv[]) {
 		return 1;
 	}
 
+	BYTE buffer[4096] = {0};
+	//GetDeviceObj(busNum, devNum, funcNum);
+	ReadPCI(busNum, devNum, funcNum,0, 4096, buffer);
+
+	//std::cout << std::hex << buffer[0] << buffer[1] << std::endl;
+
+	printf("%x\n", buffer[0]);
+	printf("%x\n", buffer[1]);
+#if 0
 	DWORD MCFGDataSize;
 
 	MCFGDataSize = GetSystemFirmwareTable(
@@ -147,7 +156,7 @@ int wmain(int argc, const wchar_t* argv[]) {
 
 
 
-#if 0
+
 	BOOL ret;
 	//ret = StartWinMemDriver();
 	//if (ret) std::cout << "sucess start driver" << std::endl;
