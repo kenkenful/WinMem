@@ -509,8 +509,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 						if (NT_SUCCESS(irp->IoStatus.Status)) {
 							DbgPrint("Success IoEnumerateDeviceObjectList \n");
 
-							size_t i;
-							for (i = 0; i < actualCount; ++i) {
+							for (size_t i = 0; i < actualCount; ++i) {
 								//pdo = IoGetAttachedDeviceReference(m_ppDevices[i]);
 
 								irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyBusNumber, sizeof(ULONG), (PVOID)&BusNumber, &length);
@@ -531,20 +530,20 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												bRet = true;
 												irp->IoStatus.Information = pPci->dwBytes;
 											}
-											ObDereferenceObject(m_ppDevices[i]);
+											for(size_t j = i; j < actualCount; ++j) ObDereferenceObject(m_ppDevices[j]);
 											break;
 										}
 									}
 									else {
 										DbgPrint("Failure IoGetDeviceProperty\n");
-										ObDereferenceObject(m_ppDevices[i]);
-										break;
+										//ObDereferenceObject(m_ppDevices[i]);
+										//break;
 									}
 								}
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
-									ObDereferenceObject(m_ppDevices[i]);
-									break;
+									//ObDereferenceObject(m_ppDevices[i]);
+									//break;
 								}
 
 								ObDereferenceObject(m_ppDevices[i]);
@@ -555,9 +554,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								DbgPrint("Object not found\n");
 								irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 							}
-
-							for (size_t j = actualCount-1; j > i;  --j) ObDereferenceObject(m_ppDevices[j]);
-							//for (size_t i = 0; i < actualCount; i++) ObDereferenceObject(m_ppDevices[i]);
 						}
 
 						ExFreePool(m_ppDevices);
@@ -618,8 +614,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 						if (NT_SUCCESS(irp->IoStatus.Status)) {
 							DbgPrint("Success IoEnumerateDeviceObjectList \n");
 
-							size_t i;
-							for (i = 0; i < actualCount; ++i) {
+							for (size_t i = 0; i < actualCount; ++i) {
 								//pdo = IoGetAttachedDeviceReference(m_ppDevices[i]);
 
 								irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyBusNumber, sizeof(ULONG), (PVOID)&BusNumber, &length);
@@ -640,21 +635,20 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												bRet = true;
 												irp->IoStatus.Information = pPci->dwBytes;
 											}
-											ObDereferenceObject(m_ppDevices[i]);
+											for(size_t j = i; j < actualCount; ++j) ObDereferenceObject(m_ppDevices[j]);										for(size_t j = i; j < actualCount; ++j) ObDereferenceObject(m_ppDevices[j]);
 											break;
-
 										}
 									}
 									else {
 										DbgPrint("Failure IoGetDeviceProperty\n");
-										ObDereferenceObject(m_ppDevices[i]);
-										break;
+										//ObDereferenceObject(m_ppDevices[i]);
+										//break;
 									}
 								}
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
-									ObDereferenceObject(m_ppDevices[i]);
-									break;
+									//ObDereferenceObject(m_ppDevices[i]);
+									//break;
 								}
 
 								ObDereferenceObject(m_ppDevices[i]);
@@ -664,9 +658,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								DbgPrint("Object not found\n");
 								irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 							}
-
-							for (size_t j = actualCount - 1; j > i; --j) ObDereferenceObject(m_ppDevices[j]);
-							//for (size_t i = 0; i < actualCount; i++) ObDereferenceObject(m_ppDevices[i]);
 						}
 
 						ExFreePool(m_ppDevices);
