@@ -1,4 +1,6 @@
 ﻿#include <ntddk.h>
+#include <initguid.h>
+#include <wdmguid.h>
 #include "winmem.h"
 #include "FastMutex.h"
 
@@ -50,6 +52,13 @@ NTSTATUS ReadWriteConfigSpace(
 	IN PVOID	      Buffer,
 	IN ULONG	      Offset,
 	IN ULONG	      Length
+);
+
+
+NTSTATUS
+GetPCIBusInterfaceStandard(
+	IN  PDEVICE_OBJECT DeviceObject,
+	OUT PBUS_INTERFACE_STANDARD	BusInterfaceStandard
 );
 
 typedef struct tagWINMEM_PCIINFO {
@@ -518,8 +527,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 									irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyAddress, sizeof(ULONG), (PVOID)&propertyAddress, &length);
 									if (NT_SUCCESS(irp->IoStatus.Status)) {
-										FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
 										DeviceNumber = (USHORT)(((propertyAddress) >> 16) & 0x0000FFFF);
+										FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
 										DbgPrint("DeviceNumber:%x\n", DeviceNumber);
 										DbgPrint("FunctionNumber:%x\n", FunctionNumber);
 
@@ -530,20 +539,16 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												bRet = true;
 												irp->IoStatus.Information = pPci->dwBytes;
 											}
-											for(size_t j = i; j < actualCount; ++j) ObDereferenceObject(m_ppDevices[j]);
+											for(size_t j=i; j< actualCount;++j)	ObDereferenceObject(m_ppDevices[j]);
 											break;
 										}
 									}
 									else {
 										DbgPrint("Failure IoGetDeviceProperty\n");
-										//ObDereferenceObject(m_ppDevices[i]);
-										//break;
 									}
 								}
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
-									//ObDereferenceObject(m_ppDevices[i]);
-									//break;
 								}
 
 								ObDereferenceObject(m_ppDevices[i]);
@@ -623,8 +628,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 									irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyAddress, sizeof(ULONG), (PVOID)&propertyAddress, &length);
 									if (NT_SUCCESS(irp->IoStatus.Status)) {
-										FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
 										DeviceNumber = (USHORT)(((propertyAddress) >> 16) & 0x0000FFFF);
+										FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
 										DbgPrint("DeviceNumber:%x\n", DeviceNumber);
 										DbgPrint("FunctionNumber:%x\n", FunctionNumber);
 
@@ -635,23 +640,129 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												bRet = true;
 												irp->IoStatus.Information = pPci->dwBytes;
 											}
-											for(size_t j = i; j < actualCount; ++j) ObDereferenceObject(m_ppDevices[j]);										for(size_t j = i; j < actualCount; ++j) ObDereferenceObject(m_ppDevices[j]);
+											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
+											break;
+
+										}
+									}
+									else {
+										DbgPrint("Failure IoGetDeviceProperty\n");
+									}
+								}
+								else {
+									DbgPrint("Failure IoGetDeviceProperty\n");
+								}
+
+								ObDereferenceObject(m_ppDevices[i]);
+							} // for (i = 0; i < actualCount; i++)
+
+							if (bRet == false) {
+								DbgPrint("Object not found\n");
+								irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+							}
+						}
+						ExFreePool(m_ppDevices);
+					}
+					else {
+						DbgPrint("Failure allocation device object list\n");
+					}
+				}
+				else {
+					DbgPrint("Failure IoEnumerateDeviceObjectList, cannot get size\n");
+				}
+
+				ObDereferenceObject(driver);
+			}
+			else {
+				DbgPrint("invalid parameter\n");
+				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+			}
+
+			break;
+
+		case IOCTL_WINMEM_GETPCI_2:
+			DbgPrint("IOCTL_WINMEM_GETPCI_2\n");
+
+			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)) {
+				RtlInitUnicodeString(&name, DriverName);
+				PDRIVER_OBJECT driver;
+				ULONG actualCount = 0;
+				PDEVICE_OBJECT* m_ppDevices = nullptr;
+
+				PVOID pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+				if (!pValue) {
+					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+					break;
+				}
+
+				irp->IoStatus.Status = ObReferenceObjectByName(&name, OBJ_CASE_INSENSITIVE /* | OBJ_OPENIF */, nullptr, 0, *IoDriverObjectType, KernelMode, nullptr, (PVOID*)&driver);
+
+				if (!NT_SUCCESS(irp->IoStatus.Status)) {
+					DbgPrint("Failure  ObReferenceObjectByName\n");
+					break;
+				}
+				else {
+					DbgPrint("Success   ObReferenceObjectByName\n");
+				}
+
+				if ((STATUS_BUFFER_TOO_SMALL == (irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, NULL, 0, &actualCount)) && actualCount)) {
+					DbgPrint("Success IoEnumerateDeviceObjectList :%d \n", actualCount);
+
+					m_ppDevices = (PDEVICE_OBJECT*)ExAllocatePool(NonPagedPool, sizeof(PDEVICE_OBJECT) * actualCount);
+
+					if (m_ppDevices) {
+						irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, m_ppDevices, actualCount * sizeof(PDEVICE_OBJECT), &actualCount);
+
+						if (NT_SUCCESS(irp->IoStatus.Status)) {
+							DbgPrint("Success IoEnumerateDeviceObjectList \n");
+
+							for (size_t i = 0; i < actualCount; ++i) {
+								//pdo = IoGetAttachedDeviceReference(m_ppDevices[i]);
+
+								irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyBusNumber, sizeof(ULONG), (PVOID)&BusNumber, &length);
+								if (NT_SUCCESS(irp->IoStatus.Status)) {
+									DbgPrint("BusNumber:%x\n", BusNumber);
+
+									irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyAddress, sizeof(ULONG), (PVOID)&propertyAddress, &length);
+									if (NT_SUCCESS(irp->IoStatus.Status)) {
+										DeviceNumber = (USHORT)(((propertyAddress) >> 16) & 0x0000FFFF);
+										FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
+										DbgPrint("DeviceNumber:%x\n", DeviceNumber);
+										DbgPrint("FunctionNumber:%x\n", FunctionNumber);
+
+										if (BusNumber == pPci->dwBusNum && DeviceNumber == pPci->dwDevNum && FunctionNumber == pPci->dwFuncNum) {
+
+											BUS_INTERFACE_STANDARD busInterfaceStandard;
+											irp->IoStatus.Status  = GetPCIBusInterfaceStandard(m_ppDevices[i], &busInterfaceStandard);
+											if (NT_SUCCESS(irp->IoStatus.Status)) {
+												ULONG bytes = busInterfaceStandard.GetBusData(
+													busInterfaceStandard.Context,
+													PCI_WHICHSPACE_CONFIG,
+													pValue,
+													pPci->dwRegOff,
+													pPci->dwBytes);
+												
+												if (bytes == pPci->dwBytes) {
+													DbgPrint("Success read config\n");
+													bRet = true;
+													irp->IoStatus.Information = pPci->dwBytes;
+												}
+											}
+
+											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
 											break;
 										}
 									}
 									else {
 										DbgPrint("Failure IoGetDeviceProperty\n");
-										//ObDereferenceObject(m_ppDevices[i]);
-										//break;
 									}
 								}
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
-									//ObDereferenceObject(m_ppDevices[i]);
-									//break;
 								}
 
 								ObDereferenceObject(m_ppDevices[i]);
+
 							} // for (i = 0; i < actualCount; i++)
 
 							if (bRet == false) {
@@ -681,82 +792,169 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 			break;
 
-		case IOCTL_WINMEM_GETOBJ:
-			RtlInitUnicodeString(&name, DriverName);
-			PDRIVER_OBJECT driver;
-			ULONG actualCount ;
-			PDEVICE_OBJECT *m_ppDevices;
+		case IOCTL_WINMEM_SETPCI_2:
+			DbgPrint("IOCTL_WINMEM_SETPCI_2\n");
 
-			irp->IoStatus.Status = ObReferenceObjectByName(&name, OBJ_CASE_INSENSITIVE /* | OBJ_OPENIF */, nullptr, 0,
-				*IoDriverObjectType, KernelMode, nullptr, (PVOID*)&driver);
+			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)) {
+				RtlInitUnicodeString(&name, DriverName);
+				PDRIVER_OBJECT driver;
+				ULONG actualCount = 0;
+				PDEVICE_OBJECT* m_ppDevices = nullptr;
 
-			if (!NT_SUCCESS(irp->IoStatus.Status)) {
-				DbgPrint("Failure  ObReferenceObjectByName\n");
-				break;
+				PVOID pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+				if (!pValue) {
+					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+					break;
+				}
+
+				irp->IoStatus.Status = ObReferenceObjectByName(&name, OBJ_CASE_INSENSITIVE /* | OBJ_OPENIF */, nullptr, 0, *IoDriverObjectType, KernelMode, nullptr, (PVOID*)&driver);
+
+				if (!NT_SUCCESS(irp->IoStatus.Status)) {
+					DbgPrint("Failure  ObReferenceObjectByName\n");
+					break;
+				}
+				else {
+					DbgPrint("Success   ObReferenceObjectByName\n");
+				}
+
+				if ((STATUS_BUFFER_TOO_SMALL == (irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, NULL, 0, &actualCount)) && actualCount)) {
+					DbgPrint("Success IoEnumerateDeviceObjectList :%d \n", actualCount);
+
+					m_ppDevices = (PDEVICE_OBJECT*)ExAllocatePool(NonPagedPool, sizeof(PDEVICE_OBJECT) * actualCount);
+
+					if (m_ppDevices) {
+						irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, m_ppDevices, actualCount * sizeof(PDEVICE_OBJECT), &actualCount);
+
+						if (NT_SUCCESS(irp->IoStatus.Status)) {
+							DbgPrint("Success IoEnumerateDeviceObjectList \n");
+
+							for (size_t i = 0; i < actualCount; ++i) {
+								//pdo = IoGetAttachedDeviceReference(m_ppDevices[i]);
+
+								irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyBusNumber, sizeof(ULONG), (PVOID)&BusNumber, &length);
+								if (NT_SUCCESS(irp->IoStatus.Status)) {
+									DbgPrint("BusNumber:%x\n", BusNumber);
+
+									irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyAddress, sizeof(ULONG), (PVOID)&propertyAddress, &length);
+									if (NT_SUCCESS(irp->IoStatus.Status)) {
+										DeviceNumber = (USHORT)(((propertyAddress) >> 16) & 0x0000FFFF);
+										FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
+										DbgPrint("DeviceNumber:%x\n", DeviceNumber);
+										DbgPrint("FunctionNumber:%x\n", FunctionNumber);
+
+										if (BusNumber == pPci->dwBusNum && DeviceNumber == pPci->dwDevNum && FunctionNumber == pPci->dwFuncNum) {
+
+											BUS_INTERFACE_STANDARD busInterfaceStandard;
+											irp->IoStatus.Status = GetPCIBusInterfaceStandard(m_ppDevices[i], &busInterfaceStandard);
+											if (NT_SUCCESS(irp->IoStatus.Status)) {
+												ULONG bytes = busInterfaceStandard.SetBusData(
+													busInterfaceStandard.Context,
+													PCI_WHICHSPACE_CONFIG,
+													pValue,
+													pPci->dwRegOff,
+													pPci->dwBytes);
+
+												if (bytes == pPci->dwBytes) {
+													DbgPrint("Success write config\n");
+													bRet = true;
+													irp->IoStatus.Information = pPci->dwBytes;
+												}
+											}
+
+											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
+											break;
+										}
+									}
+									else {
+										DbgPrint("Failure IoGetDeviceProperty\n");
+									}
+								}
+								else {
+									DbgPrint("Failure IoGetDeviceProperty\n");
+								}
+
+								ObDereferenceObject(m_ppDevices[i]);
+
+							} // for (i = 0; i < actualCount; i++)
+
+							if (bRet == false) {
+								DbgPrint("Object not found\n");
+								irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+							}
+						}
+
+						ExFreePool(m_ppDevices);
+					}
+					else {
+						DbgPrint("Failure allocation device object list\n");
+					}
+				}
+				else {
+					DbgPrint("Failure IoEnumerateDeviceObjectList, cannot get size\n");
+
+				}
+
+				ObDereferenceObject(driver);
+
 			}
 			else {
-				DbgPrint("Success   ObReferenceObjectByName\n");
+				DbgPrint("invalid parameter\n");
+				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 			}
 
-			irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, NULL, 0, &actualCount);
+			break;
 
-			 DbgPrint("Success IoEnumerateDeviceObjectList :%d \n", actualCount);
+		case IOCTL_WINMEM_GETPCI_3:
+			DbgPrint("IOCTL_WINMEM_GETPCI_3\n");
 
-			//m_ppDevices = new PDEVICE_OBJECT[actualCount];
-			m_ppDevices = (PDEVICE_OBJECT*)ExAllocatePool(NonPagedPool, sizeof(PDEVICE_OBJECT) * actualCount);
+			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)) {
+				PVOID pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+				if (!pValue) {
+					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+					break;
+				}
 
-			irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, m_ppDevices, actualCount * sizeof(PDEVICE_OBJECT), &actualCount);
+				PCI_SLOT_NUMBER slot = { 0 };
+				slot.u.bits.DeviceNumber = pPci->dwDevNum;
+				slot.u.bits.FunctionNumber = pPci->dwFuncNum;
+				ULONG bytes = HalGetBusDataByOffset(PCIConfiguration,
+					pPci->dwBusNum, slot.u.AsULONG,
+					pValue, pPci->dwRegOff, pPci->dwBytes);
 
-			if (NT_SUCCESS(irp->IoStatus.Status)) {
-				DbgPrint("Success IoEnumerateDeviceObjectList \n");
-
-				for (size_t i = 0; i < actualCount; i++) {					
-					irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i],
-						DevicePropertyBusNumber,
-						sizeof(ULONG),
-						(PVOID)&BusNumber,
-						&length);
-
-					if (NT_SUCCESS(irp->IoStatus.Status)) {
-						DbgPrint("BusNumber:%x\n", BusNumber);
-
-						irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i],
-							DevicePropertyAddress,
-							sizeof(ULONG),
-							(PVOID)&propertyAddress,
-							&length);
-						
-						if (NT_SUCCESS(irp->IoStatus.Status)) {
-							FunctionNumber = (USHORT)((propertyAddress) & 0x0000FFFF);
-							DeviceNumber = (USHORT)(((propertyAddress) >> 16) & 0x0000FFFF);
-							DbgPrint("DeviceNumber:%x\n", DeviceNumber);
-							DbgPrint("FunctionNumber:%x\n", FunctionNumber);
-
-							if (BusNumber == pPci->dwBusNum && DeviceNumber == pPci->dwDevNum && FunctionNumber == pPci->dwFuncNum) {
-								PCI_COMMON_CONFIG pci_config;
-								auto status = ReadWriteConfigSpace(m_ppDevices[i], 0, &pci_config, 0, sizeof(PCI_COMMON_CONFIG));
-								if (NT_SUCCESS(status))
-								{
-									DbgPrint("======================PCI_COMMON_CONFIG Begin=====================\n");
-									DbgPrint("VendorID:%x\n", pci_config.VendorID);
-									DbgPrint("DeviceID:%x\n", pci_config.DeviceID);
-									DbgPrint("CapabilitiesPtr: %x\n", pci_config.u.type0.CapabilitiesPtr);
-								}
-								break;
-							}
-						}else
-							DbgPrint("Failure IoGetDeviceProperty\n");
-					}
-					else
-						DbgPrint("Failure IoGetDeviceProperty\n");
+				if (pPci->dwBytes == bytes) {
+					irp->IoStatus.Information = pPci->dwBytes;
+				}
+				else {
+					irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 				}
 			}
 
-			for (size_t i = 0; i < actualCount; i++) ObDereferenceObject(m_ppDevices[i]);
+			break;
 
-			ExFreePool(m_ppDevices);
+		case IOCTL_WINMEM_SETPCI_3:
+			DbgPrint("IOCTL_WINMEM_SETPCI_3\n");
 
-			ObDereferenceObject(driver);
+			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)) {
+				PVOID pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
+				if (!pValue) {
+					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
+					break;
+				}
+
+				PCI_SLOT_NUMBER slot = { 0 };
+				slot.u.bits.DeviceNumber = pPci->dwDevNum;
+				slot.u.bits.FunctionNumber = pPci->dwFuncNum;
+				ULONG bytes = HalSetBusDataByOffset(PCIConfiguration,
+					pPci->dwBusNum, slot.u.AsULONG,
+					pValue, pPci->dwRegOff, pPci->dwBytes);
+
+				if (pPci->dwBytes == bytes) {
+					irp->IoStatus.Information = pPci->dwBytes;
+				}
+				else {
+					irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+				}
+			}
 
 			break;
 
@@ -822,122 +1020,11 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 
 }
 
-#if 0
-//prepare to get bus interface
-static NTSTATUS PreGetBus()
-{
-	NTSTATUS ntStatus;
-	UNICODE_STRING pcifidoNameU;
 
-	ntStatus = STATUS_SUCCESS;
-
-	//get pci filter driver do
-	if (pcifido == NULL)
-	{
-		RtlInitUnicodeString(&pcifidoNameU, L"\\Device\\WinMemPCIFilter");
-
-		ntStatus = IoGetDeviceObjectPointer(&pcifidoNameU,
-			FILE_READ_DATA | FILE_WRITE_DATA,
-			&pcifo,
-			&pcifido);
-
-		if (NT_SUCCESS(ntStatus))
-		{
-			DbgPrint("Got pci filter device object: 0x%x", pcifido);
-		}
-		else
-		{
-			DbgPrint("Get pci filter device object failed, code=0x%x", ntStatus);
-
-			return STATUS_UNSUCCESSFUL;
-		}
-	}
-
-	//get bus interface
-	if (busInterface->ReadConfig == NULL)
-	{
-		ntStatus = GetBusInterface(pcifido, busInterface);
-
-		if (NT_SUCCESS(ntStatus))
-		{
-			DbgPrint("Got pci bus filter driver interface");
-		}
-		else
-		{
-			DbgPrint("Get pci bus driver interface failed, code=0x%x", ntStatus);
-		}
-	}
-
-	return ntStatus;
-}
-
-//read pci configuration
-static NTSTATUS ReadWriteConfig(PIRP irp, PWINMEM_PCI pPci, BOOLEAN isRead)
-{
-	NTSTATUS ntStatus;
-
-	//get pci filter driver interface
-	ntStatus = PreGetBus();
-
-	if (NT_SUCCESS(ntStatus))
-	{
-		PVOID pValue;
-
-		//get out buffer kernel address
-		pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress,
-			NormalPagePriority);
-
-		if (pValue)
-		{
-			PCI_SLOT_NUMBER slot;
-			ULONG ulRet;
-
-			slot.u.AsULONG = 0;
-			slot.u.bits.DeviceNumber = pPci->dwDevNum;
-			slot.u.bits.FunctionNumber = pPci->dwFuncNum;
-
-			if (isRead)
-				ulRet = (*busInterface->ReadConfig)(busInterface->Context,	//context
-					(UCHAR)pPci->dwBusNum,	//busoffset
-					slot.u.AsULONG,			//slot
-					pValue,					//buffer
-					pPci->dwRegOff,			//offset
-					pPci->dwBytes);			//length
-
-			else
-				ulRet = (*busInterface->WriteConfig)(busInterface->Context,	//context
-					(UCHAR)pPci->dwBusNum,	//busoffset
-					slot.u.AsULONG,			//slot
-					pValue,					//buffer
-					pPci->dwRegOff,			//offset
-					pPci->dwBytes);			//length
-
-			if (ulRet == pPci->dwBytes)
-			{
-				ntStatus = STATUS_SUCCESS;
-
-				if (isRead)
-					DbgPrint("Read %d bytes from pci config space", ulRet);
-				else
-					DbgPrint("Write %d bytes to pci config space", ulRet);
-			}
-			else
-				ntStatus = STATUS_UNSUCCESSFUL;
-		}
-		else
-			ntStatus = STATUS_INVALID_PARAMETER;
-	}
-
-	return ntStatus;
-}
-
-
-#endif
 
 NTSTATUS
 ReadWriteConfigSpace(
 	IN PDEVICE_OBJECT DeviceObject,
-	//IN PDEVICE_OBJECT targetObject,
 	IN ULONG	      ReadOrWrite, // 0 for read 1 for write
 	IN PVOID	      Buffer,
 	IN ULONG	      Offset,
@@ -983,6 +1070,92 @@ ReadWriteConfigSpace(
 	irpStack->Parameters.ReadWriteConfig.Buffer = Buffer;
 	irpStack->Parameters.ReadWriteConfig.Offset = Offset;
 	irpStack->Parameters.ReadWriteConfig.Length = Length;
+
+	// 
+	// Initialize the status to error in case the bus driver does not 
+	// set it correctly.
+	// 
+
+	irp->IoStatus.Status = STATUS_NOT_SUPPORTED;
+
+	status = IoCallDriver(targetObject, irp);
+
+	if (status == STATUS_PENDING) {
+
+		KeWaitForSingleObject(&event, Executive, KernelMode, FALSE, NULL);
+		status = ioStatusBlock.Status;
+	}
+
+End:
+	// 
+	// Done with reference
+	// 
+	ObDereferenceObject(targetObject);
+
+	return status;
+
+}
+
+
+
+NTSTATUS
+GetPCIBusInterfaceStandard(
+	IN  PDEVICE_OBJECT DeviceObject,
+	OUT PBUS_INTERFACE_STANDARD	BusInterfaceStandard
+)
+/*++
+
+Routine Description:
+
+	This routine gets the bus interface standard information from the PDO.
+
+Arguments:
+
+	DeviceObject - Device object to query for this information.
+
+	BusInterface - Supplies a pointer to the retrieved information.
+
+Return Value:
+
+	NT status.
+
+--*/
+{
+	KEVENT event;
+	NTSTATUS status;
+	PIRP irp;
+	IO_STATUS_BLOCK ioStatusBlock;
+	PIO_STACK_LOCATION irpStack;
+	PDEVICE_OBJECT targetObject;
+
+	DbgPrint("GetPciBusInterfaceStandard entered.\n");
+
+	KeInitializeEvent(&event, NotificationEvent, FALSE);
+
+	targetObject = IoGetAttachedDeviceReference(DeviceObject);
+
+	irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP,
+		targetObject,
+		NULL,
+		0,
+		NULL,
+		&event,
+		&ioStatusBlock);
+
+	if (irp == NULL) {
+		status = STATUS_INSUFFICIENT_RESOURCES;
+		goto End;
+	}
+
+	irpStack = IoGetNextIrpStackLocation(irp);
+	irpStack->MinorFunction = IRP_MN_QUERY_INTERFACE;
+	irpStack->Parameters.QueryInterface.InterfaceType =
+		(LPGUID)&GUID_BUS_INTERFACE_STANDARD;
+	irpStack->Parameters.QueryInterface.Size = sizeof(BUS_INTERFACE_STANDARD);
+	irpStack->Parameters.QueryInterface.Version = 1;
+	irpStack->Parameters.QueryInterface.Interface = (PINTERFACE)
+		BusInterfaceStandard;
+	irpStack->Parameters.QueryInterface.InterfaceSpecificData = NULL;
 
 	// 
 	// Initialize the status to error in case the bus driver does not 
