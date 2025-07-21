@@ -241,16 +241,16 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					if (pValue != nullptr) {
 						switch (pMem->dwBytes) {
 						case 1:
-							*(UINT8*)pValue = *(UINT8*)((UINT8*)pvk + pMem->dwRegOff);
+							READ_REGISTER_BUFFER_UCHAR((UINT8*)pvk + pMem->dwRegOff, (PUCHAR)pValue, 1);
 							break;
 						case 2:
-							*(UINT16*)pValue = *(UINT16*)((UINT8*)pvk + pMem->dwRegOff);
+							READ_REGISTER_BUFFER_USHORT((USHORT*)((UINT8*)pvk + pMem->dwRegOff), (PUSHORT)pValue, 1);
 							break;
 						case 4:
-							*(UINT32*)pValue = *(UINT32*)((UINT8*)pvk + pMem->dwRegOff);
+							READ_REGISTER_BUFFER_ULONG((ULONG*)((UINT8*)pvk + pMem->dwRegOff), (PULONG)pValue, 1);
 							break;
 						case 8:
-							*(UINT64*)pValue = *(UINT64*)((UINT8*)pvk + pMem->dwRegOff);
+							READ_REGISTER_BUFFER_ULONG64((ULONG64*)((UINT8*)pvk + pMem->dwRegOff), (PULONG64)pValue, 1);
 							break;
 						default:
 							break;
@@ -293,16 +293,16 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					if (pValue != nullptr) {
 						switch (pMem->dwBytes) {
 						case 1:
-							*(UINT8*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT8*)pValue;
+							WRITE_REGISTER_BUFFER_UCHAR((UINT8*)pvk + pMem->dwRegOff, (PUCHAR)pValue, 1);
 							break;
 						case 2:
-							*(UINT16*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT16*)pValue;
+							WRITE_REGISTER_BUFFER_USHORT((USHORT*)((UINT8*)pvk + pMem->dwRegOff), (PUSHORT)pValue, 1);
 							break;
 						case 4:
-							*(UINT32*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT32*)pValue;
+							WRITE_REGISTER_BUFFER_ULONG((ULONG*)((UINT8*)pvk + pMem->dwRegOff), (PULONG)pValue, 1);
 							break;
 						case 8:
-							*(UINT64*)((UINT8*)pvk + pMem->dwRegOff) = *(UINT64*)pValue;
+							WRITE_REGISTER_BUFFER_ULONG64((ULONG64*)((UINT8*)pvk + pMem->dwRegOff), (PULONG64)pValue, 1);
 							break;
 						default:
 							break;
