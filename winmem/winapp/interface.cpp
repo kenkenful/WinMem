@@ -334,21 +334,6 @@ VOID WritePortLong(WORD portAddr, DWORD portValue)
 }
 
 
-VOID GetDeviceObj(DWORD busNum, DWORD devNum, DWORD funcNum) {
-	BOOL bRet = FALSE;
-	DWORD dwBytes;
-	WINMEM_PCI pp;
-	pp.dwBusNum = busNum;
-	pp.dwDevNum = devNum;
-	pp.dwFuncNum = funcNum;
-
-	if (hDriver != INVALID_HANDLE_VALUE)
-	{
-		DeviceIoControl(hDriver, IOCTL_WINMEM_GETOBJ, &pp, sizeof(WINMEM_PCI), nullptr, 0, &dwBytes, nullptr);
-	}
-
-}
-
 
 
 //read pci configuration
@@ -405,6 +390,124 @@ BOOL WritePCI(DWORD busNum, DWORD devNum, DWORD funcNum,
 	else
 		return FALSE;
 }
+
+
+//read pci configuration
+BOOL ReadPCI2(DWORD busNum, DWORD devNum, DWORD funcNum,
+	DWORD regOff, DWORD bytes, PVOID pValue)
+{
+	BOOL bRet = FALSE;
+	DWORD dwBytes;
+	WINMEM_PCI pp;
+
+	pp.dwBusNum = busNum;
+	pp.dwDevNum = devNum;
+	pp.dwFuncNum = funcNum;
+	pp.dwRegOff = regOff;
+	pp.dwBytes = bytes;
+	//	pp.pValue=NULL;
+
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		bRet = DeviceIoControl(hDriver, IOCTL_WINMEM_GETPCI_2, &pp,
+			sizeof(WINMEM_PCI), pValue, bytes, &dwBytes, nullptr);
+	}
+
+	if (bRet && dwBytes == bytes)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+//write pci configuration
+BOOL WritePCI2(DWORD busNum, DWORD devNum, DWORD funcNum,
+	DWORD regOff, DWORD bytes, PVOID pValue)
+{
+	BOOL bRet = FALSE;
+	DWORD dwBytes;
+	WINMEM_PCI pp;
+
+	pp.dwBusNum = busNum;
+	pp.dwDevNum = devNum;
+	pp.dwFuncNum = funcNum;
+	pp.dwRegOff = regOff;
+	pp.dwBytes = bytes;
+
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		//we use out buffer for storing the new values to write
+		//it's strange but it works (METHOD_OUT_DIRECT) and ease the driver
+		bRet = DeviceIoControl(hDriver, IOCTL_WINMEM_SETPCI_2, &pp,
+			sizeof(WINMEM_PCI), pValue, bytes, &dwBytes, nullptr);
+	}
+
+	if (bRet && dwBytes == bytes)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+
+
+
+
+//read pci configuration
+BOOL ReadPCI3(DWORD busNum, DWORD devNum, DWORD funcNum,
+	DWORD regOff, DWORD bytes, PVOID pValue)
+{
+	BOOL bRet = FALSE;
+	DWORD dwBytes;
+	WINMEM_PCI pp;
+
+	pp.dwBusNum = busNum;
+	pp.dwDevNum = devNum;
+	pp.dwFuncNum = funcNum;
+	pp.dwRegOff = regOff;
+	pp.dwBytes = bytes;
+	//	pp.pValue=NULL;
+
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		bRet = DeviceIoControl(hDriver, IOCTL_WINMEM_GETPCI_3, &pp,
+			sizeof(WINMEM_PCI), pValue, bytes, &dwBytes, nullptr);
+	}
+
+	if (bRet && dwBytes == bytes)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+//write pci configuration
+BOOL WritePCI3(DWORD busNum, DWORD devNum, DWORD funcNum,
+	DWORD regOff, DWORD bytes, PVOID pValue)
+{
+	BOOL bRet = FALSE;
+	DWORD dwBytes;
+	WINMEM_PCI pp;
+
+	pp.dwBusNum = busNum;
+	pp.dwDevNum = devNum;
+	pp.dwFuncNum = funcNum;
+	pp.dwRegOff = regOff;
+	pp.dwBytes = bytes;
+
+	if (hDriver != INVALID_HANDLE_VALUE)
+	{
+		//we use out buffer for storing the new values to write
+		//it's strange but it works (METHOD_OUT_DIRECT) and ease the driver
+		bRet = DeviceIoControl(hDriver, IOCTL_WINMEM_SETPCI_3, &pp,
+			sizeof(WINMEM_PCI), pValue, bytes, &dwBytes, nullptr);
+	}
+
+	if (bRet && dwBytes == bytes)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+
+
 
 
 BOOL ReadMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue)

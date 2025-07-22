@@ -32,6 +32,12 @@ VOID GetDeviceObj(DWORD busNum, DWORD devNum, DWORD funcNum);
 BOOL ReadPCI(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
 BOOL WritePCI(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
 
+BOOL ReadPCI2(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
+BOOL WritePCI2(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
+
+BOOL ReadPCI3(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
+BOOL WritePCI3(DWORD busNum, DWORD devNum, DWORD funcNum, DWORD regOff, DWORD bytes, PVOID pValue);
+
 
 BOOL ReadMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue);
 BOOL WriteMem(DWORD phyAddr, DWORD mapSize, DWORD regOff, DWORD bytes, PVOID pValue);
