@@ -540,7 +540,10 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												bRet = true;
 												irp->IoStatus.Information = pPci->dwBytes;
 											}
-											for(size_t j=i; j< actualCount;++j)	ObDereferenceObject(m_ppDevices[j]);
+											else {
+												irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
+											}
+											for(size_t j = i; j < actualCount;++j)	ObDereferenceObject(m_ppDevices[j]);
 											break;
 										}
 									}
@@ -636,6 +639,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												DbgPrint("Success read config\n");
 												bRet = true;
 												irp->IoStatus.Information = pPci->dwBytes;
+											}
+											else {
+												irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 											}
 											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
 											break;
@@ -739,6 +745,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 													DbgPrint("Success read config\n");
 													bRet = true;
 													irp->IoStatus.Information = pPci->dwBytes;
+												}
+												else {
+													irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 												}
 											}
 
@@ -847,6 +856,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 													DbgPrint("Success write config\n");
 													bRet = true;
 													irp->IoStatus.Information = pPci->dwBytes;
+												}
+												else {
+													irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 												}
 											}
 
