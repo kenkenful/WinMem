@@ -32,9 +32,8 @@ extern "C" NTSYSAPI NTSTATUS NTAPI ObReferenceObjectByName(
 	_In_ POBJECT_TYPE ObjectType,
 	_In_ KPROCESSOR_MODE AccessMode,
 	_Inout_opt_ PVOID ParseContext,
-	_Out_ PVOID * Object);
-
-
+	_Out_ PVOID * Object
+);
 
 extern "C" NTSTATUS
 IoEnumerateDeviceObjectList(
@@ -54,21 +53,11 @@ NTSTATUS ReadWriteConfigSpace(
 	IN ULONG	      Length
 );
 
-
 NTSTATUS
 GetPCIBusInterfaceStandard(
 	IN  PDEVICE_OBJECT DeviceObject,
 	OUT PBUS_INTERFACE_STANDARD	BusInterfaceStandard
 );
-
-typedef struct tagWINMEM_PCIINFO {
-	WINMEM_PCI    s;
-	PDEVICE_OBJECT   obj;
-}WINMEM_PCIINFO, *PWINMEM_PCIINFO;
-
-const int MAX_OBJECT_SIZE = 256;
-UCHAR gucCounter;
-WINMEM_PCIINFO info[MAX_OBJECT_SIZE];     // nvme or secondary bus
 
 FastMutex locker;
 
@@ -177,19 +166,10 @@ IRP_MJ_DEVICE_CONTROL dispatch routine
 --*/
 NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 {
-	PIO_STACK_LOCATION irpStack;
-	ULONG dwInBufLen;
-	ULONG dwOutBufLen;
-	ULONG dwIoCtlCode;
 	NTSTATUS ntStatus;
-	PVOID pSysBuf;
-	PWINMEM_MEM pMem;
-	PWINMEM_PORT pPort;
-	PWINMEM_PCI pPci;
 
 	bool bRet = false;
 	UNICODE_STRING name;
-	PDEVICE_OBJECT pdo;
 	ULONG propertyAddress, BusNumber;
 	USHORT FunctionNumber, DeviceNumber;
 	ULONG  length;
@@ -200,15 +180,15 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 	irp->IoStatus.Status = STATUS_SUCCESS;
 	irp->IoStatus.Information = 0;
 
-	irpStack = IoGetCurrentIrpStackLocation(irp);
+	PIO_STACK_LOCATION irpStack = IoGetCurrentIrpStackLocation(irp);
 
 	//Get the pointer to the input/output buffer and it's length
-	pSysBuf = (PVOID)irp->AssociatedIrp.SystemBuffer;
-	pMem = (PWINMEM_MEM)pSysBuf;
-	pPort = (PWINMEM_PORT)pSysBuf;
-	pPci = (PWINMEM_PCI)pSysBuf;
-	dwInBufLen = irpStack->Parameters.DeviceIoControl.InputBufferLength;
-	dwOutBufLen = irpStack->Parameters.DeviceIoControl.OutputBufferLength;
+	PVOID pSysBuf = (PVOID)irp->AssociatedIrp.SystemBuffer;
+	PWINMEM_MEM pMem = (PWINMEM_MEM)pSysBuf;
+	PWINMEM_PORT pPort = (PWINMEM_PORT)pSysBuf;
+	PWINMEM_PCI pPci = (PWINMEM_PCI)pSysBuf;
+	ULONG dwInBufLen = irpStack->Parameters.DeviceIoControl.InputBufferLength;
+	ULONG dwOutBufLen = irpStack->Parameters.DeviceIoControl.OutputBufferLength;
 
 	RtlInitUnicodeString(&name, DriverName);
 	PDRIVER_OBJECT driver;
@@ -219,7 +199,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 	{
 	case IRP_MJ_DEVICE_CONTROL:
 
-		dwIoCtlCode = irpStack->Parameters.DeviceIoControl.IoControlCode;
+		ULONG dwIoCtlCode = irpStack->Parameters.DeviceIoControl.IoControlCode;
 
 		switch (dwIoCtlCode)
 		{
@@ -261,10 +241,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 							break;
 						}
 					}
-
 					irp->IoStatus.Information = pMem->dwBytes;
 					DbgPrint("pMem->dwBytes : %x\n", pMem->dwBytes);
-
 					MmUnmapIoSpace(pvk, pMem->dwSize);
 				}
 
@@ -311,13 +289,11 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 							break;
 						default:
 							break;
-
 						}
 					}
 					irp->IoStatus.Information = pMem->dwBytes;
 					MmUnmapIoSpace(pvk, pMem->dwSize);
 				}
-
 			}
 			else {
 				DbgPrint("invalid parameter\n");
@@ -381,11 +357,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 				}
 				else
 					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
-			
 			}
 			else
 				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
-
 			break;
 
 		case IOCTL_WINMEM_UNMAP:
@@ -483,9 +457,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			}
 			else
 				irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
-
 			break;
-
 
 		case IOCTL_WINMEM_GETPCI:
 			DbgPrint("IOCTL_WINMEM_GETPCI\n");
@@ -564,7 +536,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 							}
 						}
-
 						ExFreePool(m_ppDevices);
 					}
 					else {
@@ -573,11 +544,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 				}
 				else {
 					DbgPrint("Failure IoEnumerateDeviceObjectList, cannot get size\n");
-
 				}
-
 				ObDereferenceObject(driver);
-
 			}
 			else {
 				DbgPrint("invalid parameter\n");
@@ -762,9 +730,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
 								}
-
 								ObDereferenceObject(m_ppDevices[i]);
-
 							} // for (i = 0; i < actualCount; i++)
 
 							if (bRet == false) {
@@ -772,7 +738,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 							}
 						}
-
 						ExFreePool(m_ppDevices);
 					}
 					else {
@@ -781,11 +746,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 				}
 				else {
 					DbgPrint("Failure IoEnumerateDeviceObjectList, cannot get size\n");
-
 				}
-
 				ObDereferenceObject(driver);
-
 			}
 			else {
 				DbgPrint("invalid parameter\n");
@@ -873,9 +835,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
 								}
-
 								ObDereferenceObject(m_ppDevices[i]);
-
 							} // for (i = 0; i < actualCount; i++)
 
 							if (bRet == false) {
@@ -894,9 +854,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					DbgPrint("Failure IoEnumerateDeviceObjectList, cannot get size\n");
 
 				}
-
 				ObDereferenceObject(driver);
-
 			}
 			else {
 				DbgPrint("invalid parameter\n");
@@ -1015,10 +973,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 											if (buf) {
 												irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyAllocatedResources, length, buf, &length);
 												PCM_RESOURCE_LIST prl = (PCM_RESOURCE_LIST)buf;
-
-
 												PCM_FULL_RESOURCE_DESCRIPTOR pfrd = prl->List;
-
 												PCM_PARTIAL_RESOURCE_LIST pprl = &pfrd->PartialResourceList;
 
 												DbgPrint("count: %d\n", pprl->Count);
@@ -1027,7 +982,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												PCM_PARTIAL_RESOURCE_DESCRIPTOR pprd = pprl->PartialDescriptors;
 
 												for (int i = 0; i < nres; ++i, ++pprd) {
-
 													switch (pprd->Type) {
 														case CmResourceTypePort:
 															DbgPrint("CmResourceTypePort\n");
@@ -1046,23 +1000,8 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 															break;
 													
 													}
-
-													//DbgPrint("Level: %d\n", pprd ->u.Interrupt.Level);
-													//DbgPrint("Vetor: %d\n", pprd->u.Interrupt.Vector);
-													//DbgPrint("Affinity: %d\n", pprd->u.Interrupt.Affinity);
-
-													//DbgPrint("MessageCount: %d\n", pprd->u.MessageInterrupt.Raw.MessageCount);
-
-													//DbgPrint("Level: %d\n", pprd->u.MessageInterrupt.Translated.Level);
-												//	DbgPrint("Vector: %d\n", pprd->u.MessageInterrupt.Translated.Vector);
-													//DbgPrint("Affinity: %d\n", pprd->u.MessageInterrupt.Translated.Affinity);
-												
-												
-												
 												}
-
 												ExFreePool(buf);
-
 											}
 										}
 #endif
@@ -1102,7 +1041,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			ObDereferenceObject(driver);
 			break;
 
-
 		default:
 
 			DbgPrint("Error: Unknown IO CONTROL CODE\n");
@@ -1120,7 +1058,6 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 	return ntStatus;
 }
-
 
 /*++
 Driver Unload routine
@@ -1160,12 +1097,8 @@ VOID WinMemUnload(IN PDRIVER_OBJECT dro)
 	{
 		DbgPrint("Error: IoDeleteSymbolicLink failed\n");
 	}
-
 	DbgPrint("Leaving WinMemUnload\n");
-
 }
-
-
 
 NTSTATUS
 ReadWriteConfigSpace(
