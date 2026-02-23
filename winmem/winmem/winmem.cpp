@@ -1,8 +1,15 @@
-ï»¿#include <ntddk.h>
+#include <ntddk.h>
 #include <initguid.h>
 #include <wdmguid.h>
 #include "winmem.h"
 #include "FastMutex.h"
+
+typedef NTSTATUS(*TypeMajorFunction)(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
+TypeMajorFunction OriginalScsi = NULL;
+
+PDEVICE_OBJECT TargetDevice = NULL;
+PDRIVER_OBJECT TargetDriver = NULL;
 
 //Mapped memory information list
 typedef struct tagMAPINFO
@@ -32,18 +39,18 @@ extern "C" NTSYSAPI NTSTATUS NTAPI ObReferenceObjectByName(
 	_In_ POBJECT_TYPE ObjectType,
 	_In_ KPROCESSOR_MODE AccessMode,
 	_Inout_opt_ PVOID ParseContext,
-	_Out_ PVOID * Object
+	_Out_ PVOID* Object
 );
 
 extern "C" NTSTATUS
 IoEnumerateDeviceObjectList(
 	IN PDRIVER_OBJECT  DriverObject,
-	IN PDEVICE_OBJECT * DeviceObjectList,
+	IN PDEVICE_OBJECT* DeviceObjectList,
 	IN ULONG  DeviceObjectListSize,
 	OUT PULONG  ActualNumberDeviceObjects
 );
 
-extern "C" POBJECT_TYPE * IoDriverObjectType;
+extern "C" POBJECT_TYPE* IoDriverObjectType;
 
 NTSTATUS ReadWriteConfigSpace(
 	IN PDEVICE_OBJECT DeviceObject,
@@ -307,7 +314,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			{
 				PHYSICAL_ADDRESS phyAddr;
 				PVOID pvk, pvu;
-			
+
 				phyAddr.QuadPart = (ULONGLONG)pMem->pvAddr;
 
 				//get mapped kernel address
@@ -323,7 +330,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 						//build mdl and map to user space
 						MmBuildMdlForNonPagedPool(pMdl);
-					
+
 						//pvu = MmMapLockedPages(pMdl, UserMode);
 						pvu = MmMapLockedPagesSpecifyCache(pMdl, UserMode, MmNonCached, NULL, FALSE, NormalPagePriority);
 
@@ -370,7 +377,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			{
 				PMAPINFO pMapInfo;
 				PLIST_ENTRY pLink;
-				
+
 				//initialize to head
 				pLink = linkListHead.Flink;
 
@@ -463,7 +470,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			DbgPrint("IOCTL_WINMEM_GETPCI\n");
 
 			if (dwInBufLen == sizeof(WINMEM_PCI) && ((pPci->dwRegOff + pPci->dwBytes) <= 4096) && (dwOutBufLen >= pPci->dwBytes)) {
-				
+
 				PVOID pValue = (PVOID)MmGetSystemAddressForMdlSafe(irp->MdlAddress, NormalPagePriority);
 				if (!pValue) {
 					irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -480,7 +487,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 					DbgPrint("Success   ObReferenceObjectByName\n");
 				}
 
-				if ((STATUS_BUFFER_TOO_SMALL == (irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, NULL, 0, &actualCount))   && actualCount) ) {
+				if ((STATUS_BUFFER_TOO_SMALL == (irp->IoStatus.Status = IoEnumerateDeviceObjectList(driver, NULL, 0, &actualCount)) && actualCount)) {
 					DbgPrint("Success IoEnumerateDeviceObjectList :%d \n", actualCount);
 
 					m_ppDevices = (PDEVICE_OBJECT*)ExAllocatePool(NonPagedPool, sizeof(PDEVICE_OBJECT) * actualCount);
@@ -515,7 +522,9 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 											else {
 												irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 											}
-											for(size_t j = i; j < actualCount;++j)	ObDereferenceObject(m_ppDevices[j]);
+
+											//for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
+											
 											break;
 										}
 									}
@@ -527,9 +536,11 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 									DbgPrint("Failure IoGetDeviceProperty\n");
 								}
 
-								ObDereferenceObject(m_ppDevices[i]);
+								//ObDereferenceObject(m_ppDevices[i]);
 
 							} // for (i = 0; i < actualCount; i++)
+
+							for (size_t i = 0; i < actualCount; ++i) ObDereferenceObject(m_ppDevices[i]);
 
 							if (bRet == false) {
 								DbgPrint("Object not found\n");
@@ -611,9 +622,10 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 											else {
 												irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 											}
-											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
-											break;
 
+											//for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
+											
+											break;
 										}
 									}
 									else {
@@ -624,8 +636,10 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 									DbgPrint("Failure IoGetDeviceProperty\n");
 								}
 
-								ObDereferenceObject(m_ppDevices[i]);
+								//ObDereferenceObject(m_ppDevices[i]);
 							} // for (i = 0; i < actualCount; i++)
+
+							for (size_t i = 0; i < actualCount; ++i) ObDereferenceObject(m_ppDevices[i]);
 
 							if (bRet == false) {
 								DbgPrint("Object not found\n");
@@ -700,7 +714,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 										if (BusNumber == pPci->dwBusNum && DeviceNumber == pPci->dwDevNum && FunctionNumber == pPci->dwFuncNum) {
 
 											BUS_INTERFACE_STANDARD busInterfaceStandard;
-											irp->IoStatus.Status  = GetPCIBusInterfaceStandard(m_ppDevices[i], &busInterfaceStandard);
+											irp->IoStatus.Status = GetPCIBusInterfaceStandard(m_ppDevices[i], &busInterfaceStandard);
 											if (NT_SUCCESS(irp->IoStatus.Status)) {
 												ULONG bytes = busInterfaceStandard.GetBusData(
 													busInterfaceStandard.Context,
@@ -708,7 +722,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 													pValue,
 													pPci->dwRegOff,
 													pPci->dwBytes);
-												
+
 												if (bytes == pPci->dwBytes) {
 													DbgPrint("Success read config\n");
 													bRet = true;
@@ -719,7 +733,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												}
 											}
 
-											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
+											//for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
 											break;
 										}
 									}
@@ -730,8 +744,10 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
 								}
-								ObDereferenceObject(m_ppDevices[i]);
+								//ObDereferenceObject(m_ppDevices[i]);
 							} // for (i = 0; i < actualCount; i++)
+
+							for (size_t i = 0; i < actualCount; ++i) ObDereferenceObject(m_ppDevices[i]);
 
 							if (bRet == false) {
 								DbgPrint("Object not found\n");
@@ -824,7 +840,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 												}
 											}
 
-											for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
+											//for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
 											break;
 										}
 									}
@@ -835,8 +851,10 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								else {
 									DbgPrint("Failure IoGetDeviceProperty\n");
 								}
-								ObDereferenceObject(m_ppDevices[i]);
+								//ObDereferenceObject(m_ppDevices[i]);
 							} // for (i = 0; i < actualCount; i++)
+
+							for (size_t i = 0; i < actualCount; ++i) ObDereferenceObject(m_ppDevices[i]);
 
 							if (bRet == false) {
 								DbgPrint("Object not found\n");
@@ -924,7 +942,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 			}
 
 			break;
-		
+
 		case IOCTL_WINMEM_TEST:
 
 			irp->IoStatus.Status = ObReferenceObjectByName(&name, OBJ_CASE_INSENSITIVE /* | OBJ_OPENIF */, nullptr, 0, *IoDriverObjectType, KernelMode, nullptr, (PVOID*)&driver);
@@ -964,7 +982,32 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 									if (BusNumber == pPci->dwBusNum && DeviceNumber == pPci->dwDevNum && FunctionNumber == pPci->dwFuncNum) {
 
-#if 1
+										PDEVICE_OBJECT  topDevice = IoGetAttachedDeviceReference(m_ppDevices[i]);
+
+										UNICODE_STRING target;
+										RtlInitUnicodeString(&target, L"\\Driver\\stornvme");
+
+										for (PDEVICE_OBJECT d = topDevice; d; d = d->AttachedDevice) {
+											if (RtlCompareUnicodeString(&d->DriverObject->DriverName, &target, TRUE) == 0)
+											{
+												TargetDevice = d;
+												TargetDriver = d->DriverObject;
+												DbgPrint("This is stornvme!\n");
+
+												if (TargetDriver->MajorFunction[IRP_MJ_SCSI])
+												{
+													bRet = true;
+													DbgPrint("{DriverEntry} Hooking IRP_MJ_SCSI in miniport driver.\n");
+													//OriginalScsi = TargetDriver->MajorFunction[IRP_MJ_SCSI];
+													//InterlockedExchange((PLONG)&TargetDriver->MajorFunction[IRP_MJ_SCSI], (LONG)ScsiFilter);
+												}
+
+											}
+										}
+
+										ObDereferenceObject(topDevice); // -1 refiŒãˆ—j
+
+#if 0
 										irp->IoStatus.Status = IoGetDeviceProperty(m_ppDevices[i], DevicePropertyAllocatedResources, 0, NULL, &length);
 
 										if (irp->IoStatus.Status == STATUS_BUFFER_TOO_SMALL && length) {
@@ -983,29 +1026,28 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 												for (int i = 0; i < nres; ++i, ++pprd) {
 													switch (pprd->Type) {
-														case CmResourceTypePort:
-															DbgPrint("CmResourceTypePort\n");
-															break;
-														case CmResourceTypeMemory:
-															DbgPrint("CmResourceTypeMemory\n");
-															break;
-														case CmResourceTypeBusNumber:
-															DbgPrint("CmResourceTypeBusNumber\n");
-															break;
-														case CmResourceTypeInterrupt:
-															DbgPrint("CmResourceTypeInterrupt\n");
-															break;
-														case CmResourceTypeDma:
-															DbgPrint("CmResourceTypeDma\n");
-															break;
-													
+													case CmResourceTypePort:
+														DbgPrint("CmResourceTypePort\n");
+														break;
+													case CmResourceTypeMemory:
+														DbgPrint("CmResourceTypeMemory\n");
+														break;
+													case CmResourceTypeBusNumber:
+														DbgPrint("CmResourceTypeBusNumber\n");
+														break;
+													case CmResourceTypeInterrupt:
+														DbgPrint("CmResourceTypeInterrupt\n");
+														break;
+													case CmResourceTypeDma:
+														DbgPrint("CmResourceTypeDma\n");
+														break;
+
 													}
 												}
 												ExFreePool(buf);
 											}
 										}
 #endif
-										for (size_t j = i; j < actualCount; ++j)	ObDereferenceObject(m_ppDevices[j]);
 										break;
 									}
 								}
@@ -1017,12 +1059,12 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 								DbgPrint("Failure IoGetDeviceProperty\n");
 							}
 
-							ObDereferenceObject(m_ppDevices[i]);
-
 						} // for (i = 0; i < actualCount; i++)
 
+						for (size_t i = 0; i < actualCount; ++i) ObDereferenceObject(m_ppDevices[i]);
+
 						if (bRet == false) {
-							DbgPrint("Object not found\n");
+							DbgPrint("stornvme not found\n");
 							irp->IoStatus.Status = STATUS_INVALID_PARAMETER;
 						}
 					}
@@ -1040,6 +1082,7 @@ NTSTATUS WinMemIoCtl(IN PDEVICE_OBJECT fdo, IN PIRP irp)
 
 			ObDereferenceObject(driver);
 			break;
+
 
 		default:
 
@@ -1259,5 +1302,3 @@ End:
 	return status;
 
 }
-
-
